@@ -1,0 +1,28 @@
+{
+    "git.ignoreLimitWarning": true,
+    "cSpell.words": [
+        "Numpad",
+        "Rgba",
+        "consts",
+        "drawparams",
+        "framebuffer",
+        "fullscreen",
+        "ggez",
+        "hidpi",
+        "imgui",
+        "keymod",
+        "keymods",
+        "nalgebra",
+        "nanos",
+        "oorandom",
+        "pdistance",
+        "powf",
+        "powi",
+        "serde",
+        "subsec",
+        "timeslice",
+        "vsync",
+        "xaxis",
+        "yaxis"
+    ]
+}
