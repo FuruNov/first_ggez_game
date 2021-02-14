@@ -11,7 +11,7 @@ use my_first_ggez::game_state::MainState;
 
 pub fn main() -> ggez::GameResult {
     let cb = ggez::ContextBuilder::new("my_first_ggez", "Nov")
-        .window_setup(conf::WindowSetup::default().title("super_simple with imgui"))
+        .window_setup(conf::WindowSetup::default().title("first_ggez_game"))
         .window_mode(
             conf::WindowMode::default()
                 .resizable(true)

@@ -38,10 +38,11 @@ pub fn draw_actor(
     )?;
 
     let drawparams = graphics::DrawParam::new()
-        .dest(na::Point2::new(x_y.x, x_y.y))
-        .rotation(actor.get_facing() as f32)
-        // .offset(na::Point2::new(x_y.x, x_y.y))
-        ;
+        .dest(na::Point2::new(
+            x_y.x + actor.get_w_h().0 / 2.0,
+            x_y.y + actor.get_w_h().1 / 2.0,
+        ))
+        .rotation(actor.get_facing() as f32);
 
     graphics::draw(ctx, &rect, drawparams)?;
     Ok(())

@@ -55,14 +55,14 @@ impl Actor {
 }
 
 // For Actor Position ////////////////
-const MAX_PHYSICS_VEL: f32 = 250.0;
+const MAX_PHYSICS_VEL: f32 = 150.0;
 
 pub fn update_actor_position(actor: &mut Actor, dt: f32) {
     // Clamp the velocity to the max efficiently
-    let norm_sq = actor.velocity.norm_squared();
-    if norm_sq != 0.0 && actor.get_tag() == ActorType::Bullet {
-        if norm_sq > MAX_PHYSICS_VEL.powi(2) {
-            actor.velocity = actor.velocity / norm_sq.sqrt() * MAX_PHYSICS_VEL;
+    let vel_norm = actor.velocity.norm();
+    if actor.get_tag() == ActorType::Bullet {
+        if vel_norm > MAX_PHYSICS_VEL {
+            actor.velocity = actor.velocity / vel_norm * MAX_PHYSICS_VEL;
         }
         rotate_actor_position(actor)
     }
@@ -72,9 +72,9 @@ pub fn update_actor_position(actor: &mut Actor, dt: f32) {
 }
 
 fn rotate_actor_position(actor: &mut Actor) {
-    let norm_sq = actor.velocity.norm_squared();
-    let actor_unit_vel = actor.velocity / norm_sq;
-    actor.velocity = norm_sq.sqrt() * (actor_unit_vel + vec_from_angle(actor.facing));
+    let vel_norm = actor.velocity.norm();
+    let actor_unit_vel = actor.velocity / vel_norm;
+    actor.velocity = vel_norm * (actor_unit_vel + vec_from_angle(actor.facing));
 }
 
 pub fn wrap_actor_position(actor: &mut Actor, screen_w_h: (f32, f32)) {
@@ -157,18 +157,18 @@ pub fn create_circle_bullets(
     x_y: na::Vector2<f32>,
     num: i32,
     range: (f32, f32),
-    vel_norm_squared: f32,
+    vel_norm: f32,
+    ang_vel: f32,
 ) -> Vec<Actor> {
     let new_bullet = |i| {
-        let r_angle = (i as f32 / num as f32 - range.0 * (range.1 - range.0) * (num as f32))
-            * (range.1 - range.0)
-            * (2.0 * std::f32::consts::PI);
+        let r_angle =
+            (i as f32 / num as f32 + range.0) * (range.1 - range.0) * (2.0 * std::f32::consts::PI);
         let bullet = create_bullet(
             x_y + vec_from_angle(r_angle),
             (10.0, 15.0),
             r_angle,
-            vel_norm_squared * vec_from_angle(r_angle),
-            0.01,
+            vel_norm * vec_from_angle(r_angle),
+            ang_vel,
         );
         bullet
     };

@@ -27,7 +27,7 @@ pub struct MainState {
 
 const PLAYER_SHOT_TIME: f32 = 0.5;
 const ENEMY_SHOT_TIME: f32 = 0.25;
-const SHOT_SPEED: f32 = 200.0;
+const SHOT_SPEED: f32 = 50.0;
 
 impl MainState {
     pub fn new(ctx: &mut Context, hidpi_factor: f32) -> GameResult<MainState> {
@@ -51,7 +51,13 @@ impl MainState {
     fn fire_player_shot(&mut self, _ctx: &Context) {
         self.player_shot_timeout = PLAYER_SHOT_TIME;
         let player = &self.player;
-        let shot = create_circle_bullets(player.get_x_y(), 5, (1.0 / 5.0, 3.0 / 5.0), SHOT_SPEED);
+        let shot = create_circle_bullets(
+            player.get_x_y() + na::Vector2::new(player.get_w_h().0 / 2.0, player.get_w_h().1 / 2.0),
+            5,
+            (-2.0 / 5.0, 0.0 / 5.0),
+            SHOT_SPEED,
+            0.0,
+        );
 
         self.player_shots.extend(shot);
         // ctx は音声の再生に用いる
@@ -65,11 +71,12 @@ impl MainState {
 
     fn handle_collisions(&mut self, _ctx: &Context) {
         let player_size =
-            (self.player.get_w_h().0.powi(2) + self.player.get_w_h().1.powi(2)).powf(0.5);
+            (self.player.get_w_h().0.powi(2) + self.player.get_w_h().1.powi(2)).sqrt() / 2.0;
         for bullet in &mut self.bullets {
-            let pdistance = bullet.get_x_y() - self.player.get_x_y();
-            let bullet_size = (bullet.get_w_h().0.powi(2) + bullet.get_w_h().1.powi(2)).powf(0.5);
-            if pdistance.norm_squared() < (player_size + bullet_size) {
+            let pdistance = (bullet.get_x_y() - self.player.get_x_y()).norm();
+            let bullet_size =
+                (bullet.get_w_h().0.powi(2) + bullet.get_w_h().1.powi(2)).sqrt() / 2.0;
+            if pdistance < player_size + bullet_size {
                 self.player.dec_life(1);
             }
         }
@@ -90,14 +97,16 @@ impl EventHandler for MainState {
 
             let _time_since_start: f32 = timer::time_since_start(ctx).as_secs_f32();
 
+            // fire enemy shot
             self.enemy_shot_timeout -= seconds;
             if self.enemy_shot_timeout < 0.0 {
                 self.enemy_shot_timeout = ENEMY_SHOT_TIME * 2.0;
                 self.bullets.extend(create_circle_bullets(
                     na::Vector2::new(0.0, 0.0),
-                    10,
+                    15,
                     (0.0, 1.0),
-                    100.0,
+                    25.0,
+                    0.01,
                 ));
             }
 
@@ -117,7 +126,7 @@ impl EventHandler for MainState {
             self.clear_dead_stuff(self.screen_w_h);
 
             if self.player.get_life() == 0 {
-                println!("Game over!");
+                // println!("Game over!");
                 // let _ = event::quit(ctx);
             }
         }
@@ -126,30 +135,13 @@ impl EventHandler for MainState {
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
         graphics::clear(ctx, [0.1, 0.2, 0.3, 1.0].into());
-
         let font = graphics::Font::new(ctx, "/LiberationMono-Regular.ttf")?;
-        draw_text(
+        draw_debug_status(
             ctx,
-            format!(
-                "
-time: {}\n
-bullet_num: {}\n
-{:#?}
-                ",
-                timer::time_since_start(ctx).as_secs_f32(),
-                self.bullets.len() + self.player_shots.len(),
-                self.player,
-            ),
-            na::Vector2::new(10.0, 10.0),
-            24.0,
             font,
+            self.bullets.len() + self.player_shots.len(),
+            self.player,
         )?;
-        // draw_text(
-        //     ctx,
-        //     self.player.get_life().to_string(),
-        //     na::Vector2::new(10.0, 60.0),
-        //     font,
-        // )?;
 
         let coords = (self.screen_w_h.0, self.screen_w_h.1);
 
@@ -265,6 +257,33 @@ bullet_num: {}\n
     fn mouse_wheel_event(&mut self, _ctx: &mut Context, x: f32, y: f32) {
         self.imgui_wrapper.update_scroll(x, y);
     }
+}
+
+fn draw_debug_status(
+    ctx: &mut Context,
+    font: graphics::Font,
+    bullet_num: usize,
+    player: Actor,
+) -> GameResult {
+    draw_text(
+        ctx,
+        format!(
+            "
+FPS: {}\n
+time: {}\n
+bullet_num: {}\n
+Player:\n
+{:#?}
+                ",
+            timer::fps(ctx) as f32,
+            timer::time_since_start(ctx).as_secs_f32(),
+            bullet_num,
+            player,
+        ),
+        na::Vector2::new(10.0, 10.0),
+        24.0,
+        font,
+    )
 }
 
 pub struct InputState {
