@@ -23,7 +23,7 @@ pub struct Actor {
     // double meaning:
     // for shots, it is the time left to live,
     // for players and rocks, it is the actual hit points.
-    life: u32,
+    life: i32,
 }
 
 impl Actor {
@@ -43,12 +43,15 @@ impl Actor {
         self.facing
     }
 
-    pub fn get_life(&self) -> u32 {
+    pub fn get_life(&self) -> i32 {
         self.life
     }
 
-    pub fn dec_life(&mut self, amount: u32) {
-        if self.life > 0 {
+    pub fn dec_life(&mut self, amount: i32) {
+        // 当たり判定の確認
+        if true
+        /* 実際のプレイでは、ライフは負に成り得ないので self.life > 0 */
+        {
             self.life -= amount;
         }
     }
@@ -60,10 +63,10 @@ const MAX_PHYSICS_VEL: f32 = 150.0;
 pub fn update_actor_position(actor: &mut Actor, dt: f32) {
     // Clamp the velocity to the max efficiently
     let vel_norm = actor.velocity.norm();
+    if vel_norm > MAX_PHYSICS_VEL {
+        actor.velocity = actor.velocity / vel_norm * MAX_PHYSICS_VEL;
+    }
     if actor.get_tag() == ActorType::Bullet {
-        if vel_norm > MAX_PHYSICS_VEL {
-            actor.velocity = actor.velocity / vel_norm * MAX_PHYSICS_VEL;
-        }
         rotate_actor_position(actor)
     }
     let dv = actor.velocity * dt;
@@ -106,9 +109,9 @@ pub fn inside_window(actor: &Actor, screen_w_h: (f32, f32)) -> bool {
 // Next ////////////////
 
 // Create Player //////////////////
-const PLAYER_LIFE: u32 = 1;
+const PLAYER_LIFE: i32 = 10;
 const PLAYER_WIDTH: f32 = 12.0;
-const PLAYER_HEIGHT: f32 = 18.0;
+const PLAYER_HEIGHT: f32 = 12.0;
 
 pub fn create_player() -> Actor {
     Actor {
@@ -176,7 +179,7 @@ pub fn create_circle_bullets(
     (0..num).map(new_bullet).collect()
 }
 
-const BULLET_LIFE: u32 = u32::MAX;
+const BULLET_LIFE: i32 = 1000;
 
 pub fn create_bullet(
     x_y: na::Vector2<f32>,

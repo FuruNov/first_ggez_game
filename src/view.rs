@@ -24,24 +24,25 @@ pub fn draw_actor(
     color: graphics::Color,
     world_coords: (f32, f32),
 ) -> GameResult<()> {
-    let x_y = world_to_screen_coords(world_coords, actor.get_x_y());
+    let w_h = actor.get_w_h();
+    let x_y = world_to_screen_coords(
+        world_coords,
+        actor.get_x_y(),
+    );
     let rect = graphics::Mesh::new_rectangle(
         ctx,
         graphics::DrawMode::fill(),
         graphics::Rect {
             x: 0.0,
             y: 0.0,
-            w: actor.get_w_h().0,
-            h: actor.get_w_h().1,
+            w: w_h.0,
+            h: w_h.1,
         },
         color,
     )?;
 
     let drawparams = graphics::DrawParam::new()
-        .dest(na::Point2::new(
-            x_y.x + actor.get_w_h().0 / 2.0,
-            x_y.y + actor.get_w_h().1 / 2.0,
-        ))
+        .dest(na::Point2::new(x_y.x, x_y.y))
         .rotation(actor.get_facing() as f32);
 
     graphics::draw(ctx, &rect, drawparams)?;
