@@ -2,32 +2,30 @@ use ggez;
 
 use ggez::event::{self, EventHandler, KeyCode, KeyMods, MouseButton};
 use ggez::graphics;
-use ggez::nalgebra as na;
 use ggez::timer;
 use ggez::{Context, GameResult};
 
+use csv::Reader;
 use oorandom::Rand32;
+use std::error::Error;
+use std::str::FromStr;
 
 use crate::actor::*;
 use crate::imgui_wrapper::ImGuiWrapper;
+use crate::vector2::Vector2;
 use crate::view::{draw_actor, draw_text};
 
 // TODO #1 アセットの追加
 
 pub struct MainState {
     player_state: PlayerState,
-    bullets: Vec<Actor>,
-    enemy_shot_timeout: f32,
+    enemies_state: Vec<EnemyState>,
     imgui_wrapper: ImGuiWrapper,
-    screen_w_h: (f32, f32),
+    screen_w_h: Vector2,
     hidpi_factor: f32,
     input: InputState,
     rng: Rand32,
 }
-
-const PLAYER_SHOT_TIME: f32 = 0.5;
-const ENEMY_SHOT_TIME: f32 = 0.5;
-const SHOT_SPEED: f32 = 50.0;
 
 impl MainState {
     pub fn new(ctx: &mut Context, hidpi_factor: f32) -> GameResult<MainState> {
@@ -35,10 +33,12 @@ impl MainState {
         let mut rng = Rand32::new(u64::from_ne_bytes(seed));
         let state = MainState {
             player_state: PlayerState::new(),
-            bullets: Vec::new(),
-            screen_w_h: graphics::drawable_size(ctx),
+            enemies_state: Vec::new(),
+            screen_w_h: Vector2(
+                graphics::drawable_size(ctx).0,
+                graphics::drawable_size(ctx).1,
+            ),
             input: InputState::default(),
-            enemy_shot_timeout: 0.0,
             rng: rng,
             imgui_wrapper: ImGuiWrapper::new(ctx),
             hidpi_factor: hidpi_factor,
@@ -46,31 +46,71 @@ impl MainState {
         Ok(state)
     }
 
-    fn clear_dead_stuff(&mut self, screen_w_h: (f32, f32)) {
+    pub fn load_data(&mut self) {
+        if let Err(err) = self.load_enemy_data() {
+            println!("{}", err);
+        // process::exit(1);
+        } else {
+            println!("success loading!!");
+        }
+    }
+
+    fn load_enemy_data(&mut self) -> Result<(), Box<dyn Error>> {
+        let mut rdr = csv::Reader::from_path("./data/enemy_state.csv")?;
+        for result in rdr.records() {
+            let record = result?;
+            let enemy = Actor::new(
+                ActorType::from_str(&record[0])?,
+                Vector2(record[1].parse()?, record[2].parse()?),
+                Vector2(record[3].parse()?, record[4].parse()?),
+                record[5].parse()?,
+                Vector2(record[6].parse()?, record[7].parse()?),
+                record[8].parse()?,
+                record[9].parse()?,
+                0.0,
+            );
+            let enemy_state = EnemyState {
+                actor: enemy,
+                shots: Vec::new(),
+                shot_timeout: 0.0,
+            };
+            // println!("{:#?}", enemy_state);
+            self.enemies_state.push(enemy_state);
+        }
+        Ok(())
+    }
+
+    fn clear_dead_stuff(&mut self, screen_w_h: Vector2) {
         self.player_state
             .shots
             .retain(|b| inside_window(b, screen_w_h) && b.get_life() > 0);
-        self.bullets
-            .retain(|b| inside_window(b, screen_w_h) && b.get_life() > 0);
+        for enemy_state in &mut self.enemies_state {
+            enemy_state
+                .shots
+                .retain(|b| inside_window(b, screen_w_h) && b.get_life() > 0);
+        }
+        self.enemies_state.retain(|es| es.actor.get_life() > 0)
     }
 
     // 当たり判定が bullet の向き（facing）に対してずれていると思われる
     fn handle_collisions(&mut self, _ctx: &Context) {
-        let player = &mut self.player_state.actor;
-        let player_size = (player.get_w_h().0.powi(2) + player.get_w_h().1.powi(2)).sqrt() / 2.0;
-        for bullet in &mut self.bullets {
-            let pdistance = (bullet.get_x_y() - player.get_x_y()).norm();
-            let bullet_size =
-                (bullet.get_w_h().0.powi(2) + bullet.get_w_h().1.powi(2)).sqrt() / 2.0;
-            if pdistance < player_size + bullet_size {
-                player.dec_life(1);
+        for enemy_state in &mut self.enemies_state {
+            for shot in &enemy_state.shots {
+                handle_actor_collision(&mut self.player_state.actor, *shot)
+            }
+            for shot in &self.player_state.shots {
+                handle_actor_collision(&mut enemy_state.actor, *shot)
             }
         }
     }
 
     fn draw_debug_status(&self, ctx: &mut Context, font: graphics::Font) -> GameResult {
-        let text_pos = na::Vector2::new(10.0, 10.0);
+        let text_pos = Vector2(10.0, 10.0);
         let font_size = 24.0;
+        let all_shot_num = &mut self.player_state.shots.len();
+        for enemy_state in &self.enemies_state {
+            *all_shot_num += enemy_state.shots.len();
+        }
         draw_text(
             ctx,
             format!(
@@ -83,7 +123,7 @@ Player:\n
                 ",
                 timer::fps(ctx) as f32,
                 timer::time_since_start(ctx).as_secs_f32(),
-                self.bullets.len() + self.player_state.shots.len(),
+                all_shot_num,
                 self.player_state.actor,
             ),
             text_pos,
@@ -102,41 +142,42 @@ impl EventHandler for MainState {
 
             {
                 let player = &mut self.player_state.actor;
-                player_handle_input(player, &self.input, seconds);
-                self.player_state.shot_timeout -= seconds;
                 update_actor_position(player, seconds);
                 wrap_actor_position(player, self.screen_w_h);
+                player.dec_collision_timeout(seconds);
+            }
+            {
+                let player_state = &mut self.player_state;
+                player_state.shot_timeout -= seconds;
+                player_state.handle_input(&self.input, seconds);
+                if self.input.fire && player_state.shot_timeout < 0.0 {
+                    player_state.fire_shot(ctx);
+                }
+                for shot in &mut player_state.shots {
+                    update_actor_position(shot, seconds);
+                    // wrap_actor_position(shot, self.screen_w_h);
+                    shot.dec_life(1);
+                }
             }
 
-            if self.input.fire && self.player_state.shot_timeout < 0.0 {
-                self.player_state.fire_player_shot(ctx);
-            }
-
-            // fire enemy shot
-            self.enemy_shot_timeout -= seconds;
-            if self.enemy_shot_timeout < 0.0 {
-                self.enemy_shot_timeout = ENEMY_SHOT_TIME;
-
-                // 渦巻弾の発射
-                self.bullets.extend(create_circle_bullets(
-                    na::Vector2::new(0.0, 0.0),
-                    9,
-                    (0.0, 1.0),
-                    25.0,
-                    0.01,
-                ));
-            }
-
-            for shot in &mut self.player_state.shots {
-                update_actor_position(shot, seconds);
-                // wrap_actor_position(shot, self.screen_w_h);
-                shot.dec_life(1);
-            }
-
-            for bullet in &mut self.bullets {
-                update_actor_position(bullet, seconds);
-                // wrap_actor_position(bullet, self.screen_w_h);
-                bullet.dec_life(1);
+            for enemy_state in &mut self.enemies_state {
+                {
+                    let enemy = &mut enemy_state.actor;
+                    update_actor_position(enemy, seconds);
+                    wrap_actor_position(enemy, self.screen_w_h);
+                    enemy.dec_collision_timeout(seconds);
+                }
+                {
+                    enemy_state.shot_timeout -= seconds;
+                    if enemy_state.shot_timeout < 0.0 {
+                        enemy_state.fire_shot(ctx);
+                    }
+                    for shot in &mut enemy_state.shots {
+                        update_actor_position(shot, seconds);
+                        // wrap_actor_position(shot, self.screen_w_h);
+                        shot.dec_life(1);
+                    }
+                }
             }
 
             self.handle_collisions(ctx);
@@ -154,23 +195,24 @@ impl EventHandler for MainState {
         graphics::clear(ctx, [0.1, 0.2, 0.3, 1.0].into());
         let font = graphics::Font::new(ctx, "/LiberationMono-Regular.ttf")?;
         self.draw_debug_status(ctx, font)?;
-
         let coords = (self.screen_w_h.0, self.screen_w_h.1);
 
         let player = &self.player_state.actor;
         draw_actor(ctx, player, graphics::WHITE, coords)?;
 
-        for bullet in &self.bullets {
-            draw_actor(
-                ctx,
-                bullet,
-                graphics::Color::new(1.0, 1.0, 0.0, 1.0),
-                coords,
-            )?;
+        for enemy_state in &self.enemies_state {
+            let enemy = &enemy_state.actor;
+            draw_actor(ctx, enemy, graphics::WHITE, coords)?;
         }
 
         for shot in &self.player_state.shots {
             draw_actor(ctx, shot, graphics::Color::new(0.0, 1.0, 1.0, 1.0), coords)?;
+        }
+
+        for enemy_state in &self.enemies_state {
+            for shot in &enemy_state.shots {
+                draw_actor(ctx, shot, graphics::Color::new(1.0, 1.0, 0.0, 1.0), coords)?;
+            }
         }
 
         // Render game ui
@@ -299,6 +341,8 @@ impl Default for InputState {
     }
 }
 
+const SHOT_SPEED: f32 = 100.0;
+
 // TODO #2 無敵時間の実装
 #[derive(Debug)]
 struct PlayerState {
@@ -316,15 +360,69 @@ impl PlayerState {
         }
     }
 
-    fn fire_player_shot(&mut self, _ctx: &Context) {
+    fn _load() -> GameResult<PlayerState> {
+        unimplemented!();
+    }
+
+    fn fire_shot(&mut self, _ctx: &Context) {
+        const PLAYER_SHOT_TIME: f32 = 0.5;
         self.shot_timeout = PLAYER_SHOT_TIME;
         let player = &self.actor;
         let shot = create_circle_bullets(
-            player.get_x_y() + na::Vector2::new(player.get_w_h().0 / 2.0, player.get_w_h().1 / 2.0),
+            player.get_x_y() + player.get_w_h() / 2.0,
             5,
             (-2.0 / 5.0, 0.0 / 5.0),
             SHOT_SPEED,
             0.0,
+        );
+
+        self.shots.extend(shot);
+        // ctx は音声の再生に用いる
+        // let _ = self.assets.shot_sound.play(ctx);
+    }
+
+    fn handle_input(&mut self, input: &InputState, dt: f32) {
+        const PLAYER_VEL: f32 = 4.0;
+        self.actor.vel =
+            Vector2(input.get_xaxis(), input.get_yaxis()) * dt * 10.0_f32.powf(PLAYER_VEL);
+    }
+}
+
+#[derive(Debug)]
+struct EnemyState {
+    actor: Actor,
+    shots: Vec<Actor>,
+    shot_timeout: f32,
+}
+
+impl EnemyState {
+    fn new() -> EnemyState {
+        EnemyState {
+            actor: Actor::new(
+                ActorType::Enemy,
+                Vector2(0.0, 300.0),
+                Vector2(24.0, 24.0),
+                0.0,
+                Vector2(200.0, 0.0),
+                0.01,
+                10,
+                0.0,
+            ),
+            shots: Vec::new(),
+            shot_timeout: 0.0,
+        }
+    }
+
+    fn fire_shot(&mut self, _ctx: &Context) {
+        const ENEMY_SHOT_TIME: f32 = 0.5;
+        self.shot_timeout = ENEMY_SHOT_TIME;
+        let enemy = &self.actor;
+        let shot = create_circle_bullets(
+            enemy.get_x_y() + enemy.get_w_h() / 2.0,
+            7,
+            (0.0, 1.0),
+            SHOT_SPEED / 8.0,
+            0.01,
         );
 
         self.shots.extend(shot);

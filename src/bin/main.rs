@@ -4,7 +4,6 @@ use ggez;
 use ggez::conf;
 use ggez::event;
 
-use std::env;
 use std::path;
 
 use my_first_ggez::game_state::MainState;
@@ -21,5 +20,6 @@ pub fn main() -> ggez::GameResult {
     let (ctx, event_loop) = &mut cb.build()?;
     let hidpi_factor = event_loop.get_primary_monitor().get_hidpi_factor() as f32;
     let state = &mut MainState::new(ctx, hidpi_factor)?;
+    state.load_data();
     event::run(ctx, event_loop, state)
 }

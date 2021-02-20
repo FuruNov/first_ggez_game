@@ -34,10 +34,11 @@ impl Assets {
     }
 
     fn actor_image(&mut self, actor: &Actor) -> &mut graphics::Image {
-        match actor.get_tag() {
-            ActorType::Player => &mut self.player_image,
-            ActorType::Bullet => &mut self.shot_image,
-            ActorType::Other => &mut self.other_image,
-        }
+        // match actor.get_tag() {
+        //     ActorType::Player => &mut self.player_image,
+        //     ActorType::Bullet => &mut self.shot_image,
+        //     ActorType::Other => &mut self.other_image,
+        // }
+        unimplemented!()
     }
 }
