@@ -11,9 +11,10 @@ use std::error::Error;
 use std::str::FromStr;
 
 use crate::actor::*;
+use crate::assets::Assets;
 use crate::imgui_wrapper::ImGuiWrapper;
 use crate::vector2::Vector2;
-use crate::view::{draw_actor, draw_text};
+use crate::view::{draw_actor, draw_collision, draw_text};
 
 // TODO #1 アセットの追加
 
@@ -21,6 +22,7 @@ pub struct MainState {
     player_state: PlayerState,
     enemies_state: Vec<EnemyState>,
     imgui_wrapper: ImGuiWrapper,
+    assets: Assets,
     screen_w_h: Vector2,
     hidpi_factor: f32,
     input: InputState,
@@ -34,6 +36,7 @@ impl MainState {
         let state = MainState {
             player_state: PlayerState::new(),
             enemies_state: Vec::new(),
+            assets: Assets::new(ctx)?,
             screen_w_h: Vector2(
                 graphics::drawable_size(ctx).0,
                 graphics::drawable_size(ctx).1,
@@ -104,7 +107,7 @@ impl MainState {
         }
     }
 
-    fn draw_debug_status(&self, ctx: &mut Context, font: graphics::Font) -> GameResult {
+    fn draw_debug_status(&self, ctx: &mut Context, world_coords: (f32, f32)) -> GameResult {
         let text_pos = Vector2(10.0, 10.0);
         let font_size = 24.0;
         let all_shot_num = &mut self.player_state.shots.len();
@@ -128,7 +131,8 @@ Player:\n
             ),
             text_pos,
             font_size,
-            font,
+            self.assets.get_font(),
+            world_coords,
         )
     }
 }
@@ -141,18 +145,20 @@ impl EventHandler for MainState {
             let _time_since_start: f32 = timer::time_since_start(ctx).as_secs_f32();
 
             {
-                let player = &mut self.player_state.actor;
+                let player_state = &mut self.player_state;
+                let player = &mut player_state.actor;
+
                 update_actor_position(player, seconds);
                 wrap_actor_position(player, self.screen_w_h);
-                player.dec_collision_timeout(seconds);
-            }
-            {
-                let player_state = &mut self.player_state;
+
                 player_state.shot_timeout -= seconds;
+                player.dec_collision_timeout(seconds);
+
                 player_state.handle_input(&self.input, seconds);
                 if self.input.fire && player_state.shot_timeout < 0.0 {
                     player_state.fire_shot(ctx);
                 }
+
                 for shot in &mut player_state.shots {
                     update_actor_position(shot, seconds);
                     // wrap_actor_position(shot, self.screen_w_h);
@@ -161,22 +167,22 @@ impl EventHandler for MainState {
             }
 
             for enemy_state in &mut self.enemies_state {
-                {
-                    let enemy = &mut enemy_state.actor;
-                    update_actor_position(enemy, seconds);
-                    wrap_actor_position(enemy, self.screen_w_h);
-                    enemy.dec_collision_timeout(seconds);
+                let enemy = &mut enemy_state.actor;
+
+                update_actor_position(enemy, seconds);
+                wrap_actor_position(enemy, self.screen_w_h);
+
+                enemy.dec_collision_timeout(seconds);
+                enemy_state.shot_timeout -= seconds;
+
+                if enemy_state.shot_timeout < 0.0 {
+                    enemy_state.fire_shot(ctx);
                 }
-                {
-                    enemy_state.shot_timeout -= seconds;
-                    if enemy_state.shot_timeout < 0.0 {
-                        enemy_state.fire_shot(ctx);
-                    }
-                    for shot in &mut enemy_state.shots {
-                        update_actor_position(shot, seconds);
-                        // wrap_actor_position(shot, self.screen_w_h);
-                        shot.dec_life(1);
-                    }
+
+                for shot in &mut enemy_state.shots {
+                    update_actor_position(shot, seconds);
+                    // wrap_actor_position(shot, self.screen_w_h);
+                    shot.dec_life(1);
                 }
             }
 
@@ -193,25 +199,40 @@ impl EventHandler for MainState {
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
         graphics::clear(ctx, [0.1, 0.2, 0.3, 1.0].into());
-        let font = graphics::Font::new(ctx, "/LiberationMono-Regular.ttf")?;
-        self.draw_debug_status(ctx, font)?;
-        let coords = (self.screen_w_h.0, self.screen_w_h.1);
+        self.draw_debug_status(ctx, (0.0, 0.0))?;
+        {
+            let assets = &mut self.assets;
+            let coords = (self.screen_w_h.0, self.screen_w_h.1);
 
-        let player = &self.player_state.actor;
-        draw_actor(ctx, player, graphics::WHITE, coords)?;
+            {
+                let player_state = &self.player_state;
+                let player = &player_state.actor;
+                draw_actor(ctx, player, assets, coords)?;
+                draw_collision(ctx, player, graphics::WHITE, coords)?;
 
-        for enemy_state in &self.enemies_state {
-            let enemy = &enemy_state.actor;
-            draw_actor(ctx, enemy, graphics::WHITE, coords)?;
-        }
+                for shot in &player_state.shots {
+                    draw_actor(ctx, shot, assets, coords)?;
+                    draw_collision(ctx, shot, graphics::Color::new(0.0, 1.0, 1.0, 1.0), coords)?;
+                }
+            }
 
-        for shot in &self.player_state.shots {
-            draw_actor(ctx, shot, graphics::Color::new(0.0, 1.0, 1.0, 1.0), coords)?;
-        }
+            for enemy_state in &self.enemies_state {
+                let enemy = &enemy_state.actor;
+                draw_actor(ctx, enemy, assets, coords)?;
+                draw_collision(ctx, enemy, graphics::WHITE, coords)?;
+                draw_text(
+                    ctx,
+                    format!("{:#?}", enemy.get_life()),
+                    enemy.get_x_y() + Vector2(30.0, 30.0),
+                    24.0,
+                    assets.get_font(),
+                    coords,
+                )?;
 
-        for enemy_state in &self.enemies_state {
-            for shot in &enemy_state.shots {
-                draw_actor(ctx, shot, graphics::Color::new(1.0, 1.0, 0.0, 1.0), coords)?;
+                for shot in &enemy_state.shots {
+                    draw_actor(ctx, shot, assets, coords)?;
+                    draw_collision(ctx, shot, graphics::Color::new(1.0, 1.0, 0.0, 1.0), coords)?;
+                }
             }
         }
 
@@ -396,7 +417,7 @@ struct EnemyState {
 }
 
 impl EnemyState {
-    fn new() -> EnemyState {
+    fn _new() -> EnemyState {
         EnemyState {
             actor: Actor::new(
                 ActorType::Enemy,
