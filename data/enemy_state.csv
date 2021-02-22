@@ -1,3 +1,3 @@
-tag,x,y,w,h,facing,vx,vy,ang_vel,life
-Enemy,0,0,24,24,0,100,0,0.05,5
-Enemy,0,0,24,24,0,-100,0,-0.05,5
+tag,x,y,w,h,facing,vx,vy,ang_vel,life,max_collision_timeout
+Enemy,0,0,16,16,0,100,0,0.01,5,0.25
+Enemy,0,0,16,16,0,-100,0,-0.01,5,0.25

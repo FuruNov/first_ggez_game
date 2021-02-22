@@ -12,6 +12,7 @@
         "imgui",
         "keymod",
         "keymods",
+        "maplit",
         "nalgebra",
         "nanos",
         "oorandom",

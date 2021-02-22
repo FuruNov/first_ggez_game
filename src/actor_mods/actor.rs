@@ -45,6 +45,7 @@ pub struct Actor {
     // for players and rocks, it is the actual hit points.
     life: i32,
     collision_timeout: f32,
+    max_collision_timeout: f32,
 }
 
 impl Actor {
@@ -56,7 +57,7 @@ impl Actor {
         vel: Vector2,
         ang_vel: f32,
         life: i32,
-        collision_timeout: f32,
+        max_collision_timeout: f32,
     ) -> Self {
         Actor {
             tag: tag,
@@ -66,7 +67,8 @@ impl Actor {
             vel: vel,
             ang_vel: ang_vel,
             life: life,
-            collision_timeout: collision_timeout,
+            collision_timeout: 0.0,
+            max_collision_timeout: max_collision_timeout,
         }
     }
 
@@ -169,20 +171,20 @@ pub fn inside_window(actor: &Actor, screen_w_h: Vector2) -> bool {
 
 // Create Player //////////////////
 const PLAYER_LIFE: i32 = 10;
-const PLAYER_WIDTH: f32 = 12.0;
-const PLAYER_HEIGHT: f32 = 12.0;
+const PLAYER_WIDTH: f32 = 8.0;
+const PLAYER_HEIGHT: f32 = 8.0;
 
 pub fn create_player() -> Actor {
-    Actor {
-        tag: ActorType::Player,
-        x_y: Vector2(0.0, -300.0),
-        w_h: Vector2(PLAYER_WIDTH, PLAYER_HEIGHT),
-        facing: 0.0,
-        vel: Vector2(0.0, 0.0),
-        ang_vel: 0.0,
-        life: PLAYER_LIFE,
-        collision_timeout: 0.0,
-    }
+    Actor::new(
+        ActorType::Player,
+        Vector2(0.0, -300.0),
+        Vector2(PLAYER_WIDTH, PLAYER_HEIGHT),
+        0.0,
+        Vector2(0.0, 0.0),
+        0.0,
+        PLAYER_LIFE,
+        0.5,
+    )
 }
 
 const MAX_BULLET_VEL: f32 = 50.0;
@@ -193,7 +195,7 @@ pub fn create_rand_bullets(rng: &mut Rand32, x_y: Vector2, num: i32) -> Vec<Acto
         let r_distance = rng.rand_float();
         let bullet = create_bullet(
             x_y + vec_from_angle(r_angle) * r_distance,
-            Vector2(5.0, 5.0),
+            Vector2(3.0, 3.0),
             r_angle,
             random_vec(rng, MAX_BULLET_VEL),
             0.0,
@@ -215,7 +217,7 @@ pub fn create_circle_bullets(
             (i as f32 / num as f32 + range.0) * (range.1 - range.0) * (2.0 * std::f32::consts::PI);
         let bullet = create_bullet(
             x_y + vec_from_angle(r_angle),
-            Vector2(10.0, 15.0),
+            Vector2(4.0, 4.0),
             r_angle,
             vec_from_angle(r_angle) * vel_norm,
             ang_vel,
@@ -227,26 +229,25 @@ pub fn create_circle_bullets(
 }
 
 pub fn create_bullet(x_y: Vector2, w_h: Vector2, facing: f32, vel: Vector2, ang_vel: f32) -> Actor {
-    const BULLET_LIFE: i32 = 1000;
-    Actor {
-        tag: ActorType::Bullet,
-        x_y: x_y,
-        w_h: w_h,
-        facing: facing,
-        vel: vel,
-        ang_vel: ang_vel,
-        life: BULLET_LIFE,
-        collision_timeout: 0.0,
-    }
+    const BULLET_LIFE: i32 = i32::MAX;
+    Actor::new(
+        ActorType::Bullet,
+        x_y,
+        w_h,
+        facing,
+        vel,
+        ang_vel,
+        BULLET_LIFE,
+        f32::MAX,
+    )
 }
 
 pub fn handle_actor_collision(actor: &mut Actor, bullet: Actor) {
-    const COLLISION_TIMEOUT: f32 = 0.5;
     let player_size = actor.w_h.norm() / 2.0;
     let pdistance = (bullet.x_y - actor.x_y).norm();
     let bullet_size = bullet.w_h.norm();
     if pdistance < player_size + bullet_size && actor.get_collision_timeout() < 0.0 {
-        actor.set_collision_timeout(COLLISION_TIMEOUT);
+        actor.set_collision_timeout(actor.max_collision_timeout);
         actor.dec_life(1);
     }
 }

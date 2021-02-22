@@ -1,0 +1,64 @@
+{
+    // IntelliSense を使用して利用可能な属性を学べます。
+    // 既存の属性の説明をホバーして表示します。
+    // 詳細情報は次を確認してください: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'my_first_ggez'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=my_first_ggez"
+                ],
+                "filter": {
+                    "name": "my_first_ggez",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'my_first_ggez'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=my_first_ggez",
+                    "--package=my_first_ggez"
+                ],
+                "filter": {
+                    "name": "my_first_ggez",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'my_first_ggez'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=my_first_ggez",
+                    "--package=my_first_ggez"
+                ],
+                "filter": {
+                    "name": "my_first_ggez",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
