@@ -1,7 +1,10 @@
 use ggez;
+use ggez::graphics;
 use ggez::{Context, GameResult};
 
 use crate::actor_mods::actor::*;
+use crate::assets::Assets;
+use crate::draw::draw_text;
 use crate::input::InputState;
 use crate::vector2::Vector2;
 
@@ -16,9 +19,9 @@ pub struct ActorState {
 }
 
 impl ActorState {
-    pub fn new(player: Actor) -> ActorState {
+    pub fn new(actor: Actor) -> ActorState {
         ActorState {
-            actor: player,
+            actor: actor,
             shots: Vec::new(),
             shot_timeout: 0.0,
         }
@@ -96,6 +99,42 @@ impl ActorState {
 
     pub fn clear_dead_stuff(&mut self, screen_w_h: Vector2) {
         self.shots
-            .retain(|s| inside_window(s, screen_w_h) && s.get_life() > 0);
+            .retain(|s| s.inside_window(screen_w_h) && s.get_life() > 0);
+    }
+
+    pub fn update(&mut self, seconds: f32, screen_w_h: Vector2) {
+        for shot in self.get_mut_shots() {
+            shot.update_actor_position(seconds);
+            // wrap_actor_position(shot, self.screen_w_h);
+            shot.dec_life(1);
+        }
+        self.dec_shot_timeout(seconds);
+
+        let actor = self.get_mut_actor();
+        actor.dec_collision_timeout(seconds);
+        actor.update_actor_position(seconds);
+        actor.wrap_actor_position(screen_w_h);
+    }
+
+    pub fn draw(&self, ctx: &mut Context, assets: &Assets, coords: (f32, f32)) -> GameResult {
+        let actor = self.get_actor();
+        actor.draw(ctx, assets, coords)?;
+        actor.draw_collision(ctx, graphics::WHITE, coords)?;
+        // 残りライフの表示
+        draw_text(
+            ctx,
+            format!("{:#?}", actor.get_life()),
+            actor.get_x_y() + actor.get_w_h() * 2.0,
+            24.0,
+            assets.get_font(),
+            coords,
+        )?;
+
+        let color = graphics::Color::new(0.0, 1.0, 1.0, 1.0);
+        for shot in self.get_shots() {
+            shot.draw(ctx, assets, coords)?;
+            shot.draw_collision(ctx, color, coords)?;
+        }
+        Ok(())
     }
 }

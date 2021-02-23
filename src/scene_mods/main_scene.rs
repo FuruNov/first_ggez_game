@@ -13,38 +13,38 @@ use std::str::FromStr;
 use crate::actor_mods::actor::*;
 use crate::actor_mods::actor_state::*;
 use crate::assets::Assets;
+use crate::draw::draw_text;
 use crate::imgui_wrapper::ImGuiWrapper;
 use crate::input::*;
 use crate::vector2::Vector2;
-use crate::view::{draw_actor, draw_collision, draw_text};
 
-pub struct MainState {
-    // TODO #5
-    player_state: (ActorState, Vec<ActorState>), // (親機, 子機)
+// TODO #4
+pub struct MainScene {
+    player_state: (ActorState, Vec<ActorState>), // (親機, 子機) TODO #5
     enemies_state: Vec<ActorState>,
     imgui_wrapper: ImGuiWrapper,
     assets: Assets,
     screen_w_h: Vector2,
     hidpi_factor: f32,
     input: InputState,
-    rng: Rand32,
+    _rng: Rand32,
 }
 
-impl MainState {
-    pub fn new(ctx: &mut Context, hidpi_factor: f32) -> GameResult<MainState> {
+impl MainScene {
+    pub fn new(ctx: &mut Context, hidpi_factor: f32) -> GameResult<MainScene> {
         let seed: [u8; 8] = [0; 8];
-        let mut rng = Rand32::new(u64::from_ne_bytes(seed));
+        let mut _rng = Rand32::new(u64::from_ne_bytes(seed));
 
-        let state = MainState {
+        let state = MainScene {
             player_state: (ActorState::new(create_player()), Vec::new()),
             enemies_state: Vec::new(),
-            assets: Assets::new(ctx)?.load(ctx)?,
+            assets: Assets::new(ctx)?.load(ctx).unwrap(),
             screen_w_h: Vector2(
                 graphics::drawable_size(ctx).0,
                 graphics::drawable_size(ctx).1,
             ),
             input: InputState::default(),
-            rng: rng,
+            _rng: _rng,
             imgui_wrapper: ImGuiWrapper::new(ctx),
             hidpi_factor: hidpi_factor,
         };
@@ -85,10 +85,10 @@ impl MainState {
         Ok(())
     }
 
-    fn clear_dead_stuff(&mut self, screen_w_h: Vector2) {
-        self.player_state.0.clear_dead_stuff(screen_w_h);
+    fn clear_dead_stuff(&mut self) {
+        self.player_state.0.clear_dead_stuff(self.screen_w_h);
         for enemy_state in &mut self.enemies_state {
-            enemy_state.clear_dead_stuff(screen_w_h);
+            enemy_state.clear_dead_stuff(self.screen_w_h);
         }
         self.enemies_state
             .retain(|es| es.get_actor().get_life() > 0)
@@ -97,15 +97,18 @@ impl MainState {
     fn handle_collisions(&mut self, _ctx: &Context) {
         for enemy_state in &mut self.enemies_state {
             for shot in enemy_state.get_shots() {
-                handle_actor_collision(self.player_state.0.get_mut_actor(), *shot)
+                self.player_state
+                    .0
+                    .get_mut_actor()
+                    .handle_actor_collision(*shot)
             }
             for shot in self.player_state.0.get_shots() {
-                handle_actor_collision(enemy_state.get_mut_actor(), *shot)
+                enemy_state.get_mut_actor().handle_actor_collision(*shot)
             }
         }
     }
 
-    fn draw_debug_status(&self, ctx: &mut Context, world_coords: (f32, f32)) -> GameResult {
+    fn draw_debug_status(&self, ctx: &mut Context) -> GameResult {
         let text_pos = Vector2(10.0, 10.0);
         let font_size = 24.0;
         let all_shot_num = &mut self.player_state.0.get_shots().len();
@@ -130,12 +133,12 @@ Player:\n
             text_pos,
             font_size,
             self.assets.get_font(),
-            world_coords,
+            (0.0, 0.0),
         )
     }
 }
 
-impl EventHandler for MainState {
+impl EventHandler for MainScene {
     fn update(&mut self, ctx: &mut Context) -> GameResult {
         const DESIRED_FPS: u32 = 60;
         while timer::check_update_time(ctx, DESIRED_FPS) {
@@ -148,106 +151,42 @@ impl EventHandler for MainState {
                 if self.input.get_fire() && player_state.get_shot_timeout() < 0.0 {
                     player_state.fire_shot(ctx);
                 }
+                player_state.update(seconds, self.screen_w_h);
 
-                for shot in player_state.get_mut_shots() {
-                    update_actor_position(shot, seconds);
-                    // wrap_actor_position(shot, self.screen_w_h);
-                    shot.dec_life(1);
+                if self.player_state.0.get_actor().get_life() <= 0 {
+                    println!("Game over!!");
+                    event::quit(ctx);
                 }
-                player_state.dec_shot_timeout(seconds);
-
-                let player = player_state.get_mut_actor();
-                update_actor_position(player, seconds);
-                wrap_actor_position(player, self.screen_w_h);
-                player.dec_collision_timeout(seconds);
             }
 
             for enemy_state in &mut self.enemies_state {
-                enemy_state.dec_shot_timeout(seconds);
-
                 if enemy_state.get_shot_timeout() < 0.0 {
                     enemy_state.fire_shot(ctx);
                 }
-
-                for shot in enemy_state.get_mut_shots() {
-                    update_actor_position(shot, seconds);
-                    // wrap_actor_position(shot, self.screen_w_h);
-                    shot.dec_life(1);
-                }
-
-                let enemy = &mut enemy_state.get_mut_actor();
-
-                enemy.dec_collision_timeout(seconds);
-                update_actor_position(enemy, seconds);
-                wrap_actor_position(enemy, self.screen_w_h);
+                enemy_state.update(seconds, self.screen_w_h);
             }
 
             self.handle_collisions(ctx);
-            self.clear_dead_stuff(self.screen_w_h);
-
-            if self.player_state.0.get_actor().get_life() <= 0 {
-                // println!("Game over!");
-                // let _ = event::quit(ctx);
-            }
+            self.clear_dead_stuff();
         }
         Ok(())
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
         graphics::clear(ctx, [0.1, 0.2, 0.3, 1.0].into());
-        self.draw_debug_status(ctx, (0.0, 0.0))?;
-        {
-            let assets = &mut self.assets;
-            let coords = (self.screen_w_h.0, self.screen_w_h.1);
+        self.draw_debug_status(ctx)?;
 
-            {
-                let player_state = &self.player_state.0;
-                let player = &player_state.get_actor();
-                draw_actor(ctx, player, assets, coords)?;
-                draw_collision(ctx, player, graphics::WHITE, coords)?;
+        let assets = &self.assets;
+        let coords = (self.screen_w_h.0, self.screen_w_h.1);
 
-                // 残りライフの表示
-                draw_text(
-                    ctx,
-                    format!("{:#?}", player.get_life()),
-                    player.get_x_y() + player.get_w_h() * 2.0,
-                    24.0,
-                    assets.get_font(),
-                    coords,
-                )?;
+        &self.player_state.0.draw(ctx, assets, coords)?;
 
-                for shot in player_state.get_shots() {
-                    draw_actor(ctx, shot, assets, coords)?;
-                    draw_collision(ctx, shot, graphics::Color::new(0.0, 1.0, 1.0, 1.0), coords)?;
-                }
-            }
-
-            for enemy_state in &self.enemies_state {
-                let enemy = &enemy_state.get_actor();
-                draw_actor(ctx, enemy, assets, coords)?;
-                draw_collision(ctx, enemy, graphics::WHITE, coords)?;
-
-                // 残りライフの表示
-                draw_text(
-                    ctx,
-                    format!("{:#?}", enemy.get_life()),
-                    enemy.get_x_y() + enemy.get_w_h() * 2.0,
-                    24.0,
-                    assets.get_font(),
-                    coords,
-                )?;
-
-                for shot in enemy_state.get_shots() {
-                    draw_actor(ctx, shot, assets, coords)?;
-                    draw_collision(ctx, shot, graphics::Color::new(1.0, 1.0, 0.0, 1.0), coords)?;
-                }
-            }
+        for enemy_state in &self.enemies_state {
+            enemy_state.draw(ctx, assets, coords)?;
         }
 
         // Render game ui
-        {
-            self.imgui_wrapper.render(ctx, self.hidpi_factor);
-        }
+        self.imgui_wrapper.render(ctx, self.hidpi_factor);
 
         // Then we flip the screen...
         graphics::present(ctx)?;

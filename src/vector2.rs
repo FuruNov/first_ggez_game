@@ -17,6 +17,12 @@ impl Vector2 {
     pub fn norm_squared(self) -> f32 {
         self.0.powi(2) + self.1.powi(2)
     }
+
+    pub fn world_to_screen_coords(self, screen_w_h: (f32, f32)) -> Vector2 {
+        let x = self.0 + screen_w_h.0 / 2.0;
+        let y = screen_w_h.1 - (self.1 + screen_w_h.1 / 2.0);
+        Vector2(x, y)
+    }
 }
 
 impl Add for Vector2 {

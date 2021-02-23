@@ -121,7 +121,7 @@ impl ImGuiWrapper {
                         mouse_pos[1]
                     ));
                 });
-            // ui.show_demo_window(&mut show);
+            ui.show_demo_window(&mut show);
         }
 
         // Render

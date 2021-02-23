@@ -1,6 +1,11 @@
+use ggez::graphics;
+use ggez::nalgebra as na;
+use ggez::{Context, GameResult};
+
 use oorandom::Rand32;
 use std::str::FromStr;
 
+use crate::assets::Assets;
 use crate::vector2::{random_vec, vec_from_angle, Vector2};
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -116,65 +121,106 @@ impl Actor {
             self.collision_timeout = amount;
         }
     }
-}
 
-const MAX_PHYSICS_VEL: f32 = 150.0;
+    pub fn draw(self, ctx: &mut Context, assets: &Assets, world_coords: (f32, f32)) -> GameResult {
+        let x_y = self.get_x_y().world_to_screen_coords(world_coords);
+        let x_y = na::Point2::new(x_y.0, x_y.1);
+        let image = assets.actor_image(self);
+        let drawparams = graphics::DrawParam::new()
+            .dest(x_y)
+            .rotation(self.get_facing() as f32)
+            .offset(na::Point2::new(0.5, 0.5));
 
-pub fn update_actor_position(actor: &mut Actor, dt: f32) {
-    // Clamp the velocity to the max efficiently
-    let vel_norm = actor.vel.norm();
-    if vel_norm > MAX_PHYSICS_VEL {
-        actor.vel = actor.vel / vel_norm * MAX_PHYSICS_VEL;
+        graphics::draw(ctx, image, drawparams)?;
+        Ok(())
     }
-    if actor.get_tag() != ActorType::Player {
-        rotate_actor_position(actor)
+
+    pub fn draw_collision(
+        self,
+        ctx: &mut Context,
+        color: graphics::Color,
+        world_coords: (f32, f32),
+    ) -> GameResult {
+        let w_h = self.get_w_h();
+        let x_y = self.get_x_y().world_to_screen_coords(world_coords);
+        let x_y = na::Point2::new(x_y.0, x_y.1);
+        let rect = graphics::Mesh::new_circle(
+            ctx,
+            graphics::DrawMode::stroke(2.0),
+            na::Point2::new(0.0, 0.0),
+            w_h.norm(),
+            1.0,
+            color,
+        )?;
+        let drawparams = graphics::DrawParam::new()
+            .dest(x_y)
+            .rotation(self.get_facing() as f32)
+            .offset(na::Point2::new(0.5, 0.5));
+
+        graphics::draw(ctx, &rect, drawparams)?;
+        Ok(())
     }
-    let dv = actor.vel * dt;
-    actor.x_y += dv;
-    actor.facing += actor.ang_vel;
-}
 
-fn rotate_actor_position(actor: &mut Actor) {
-    let vel_norm = actor.vel.norm();
-    let actor_unit_vel = actor.vel / vel_norm;
-    let vel_after = actor_unit_vel + vec_from_angle(actor.facing);
-    actor.vel = vel_after * vel_norm;
-}
+    pub fn update_actor_position(&mut self, dt: f32) {
+        const MAX_PHYSICS_VEL: f32 = 150.0;
+        // Clamp the velocity to the max efficiently
+        let vel_norm = self.vel.norm();
+        if vel_norm > MAX_PHYSICS_VEL {
+            self.vel = self.vel / vel_norm * MAX_PHYSICS_VEL;
+        }
+        if self.get_tag() != ActorType::Player {
+            self.rotate_actor_position();
+        }
+        let dv = self.vel * dt;
+        self.x_y += dv;
+        self.facing += self.ang_vel;
+    }
 
-pub fn wrap_actor_position(actor: &mut Actor, screen_w_h: Vector2) {
-    // Wrap screen
-    let sx = screen_w_h.0;
-    let sy = screen_w_h.1;
-    let screen_x_bounds = sx / 2.0;
-    let screen_y_bounds = sy / 2.0;
-    if actor.x_y.0 > screen_x_bounds {
-        actor.x_y -= Vector2(sx, 0.0);
-    } else if actor.x_y.0 < -screen_x_bounds {
-        actor.x_y += Vector2(sx, 0.0);
-    };
-    if actor.x_y.1 > screen_y_bounds {
-        actor.x_y -= Vector2(0.0, sy);
-    } else if actor.x_y.1 < -screen_y_bounds {
-        actor.x_y += Vector2(0.0, sy);
+    fn rotate_actor_position(&mut self) {
+        let vel_norm = self.vel.norm();
+        let unit_vel = self.vel / vel_norm;
+        let vel_after = unit_vel + vec_from_angle(self.facing);
+        self.vel = vel_after * vel_norm;
+    }
+
+    pub fn wrap_actor_position(&mut self, screen_w_h: Vector2) {
+        // Wrap screen
+        let (sx, sy) = (screen_w_h.0, screen_w_h.1);
+        let (screen_x_bounds, screen_y_bounds) = (sx / 2.0, sy / 2.0);
+
+        if self.x_y.0 > screen_x_bounds {
+            self.x_y -= Vector2(sx, 0.0);
+        } else if self.x_y.0 < -screen_x_bounds {
+            self.x_y += Vector2(sx, 0.0);
+        };
+        if self.x_y.1 > screen_y_bounds {
+            self.x_y -= Vector2(0.0, sy);
+        } else if self.x_y.1 < -screen_y_bounds {
+            self.x_y += Vector2(0.0, sy);
+        }
+    }
+
+    pub fn inside_window(&self, screen_w_h: Vector2) -> bool {
+        let (sx, sy) = (screen_w_h.0, screen_w_h.1);
+        let (screen_x_bounds, screen_y_bounds) = (sx / 2.0, sy / 2.0);
+        self.x_y.0.abs() < screen_x_bounds && self.x_y.1.abs() < screen_y_bounds
+    }
+
+    pub fn handle_actor_collision(&mut self, bullet: Actor) {
+        let player_size = self.w_h.norm() / 2.0;
+        let pdistance = (bullet.x_y - self.x_y).norm();
+        let bullet_size = bullet.w_h.norm();
+        if pdistance < player_size + bullet_size && self.get_collision_timeout() < 0.0 {
+            self.set_collision_timeout(self.max_collision_timeout);
+            self.dec_life(1);
+        }
     }
 }
-
-pub fn inside_window(actor: &Actor, screen_w_h: Vector2) -> bool {
-    let sx = screen_w_h.0;
-    let sy = screen_w_h.1;
-    let screen_x_bounds = sx / 2.0;
-    let screen_y_bounds = sy / 2.0;
-    actor.x_y.0.abs() < screen_x_bounds && actor.x_y.1.abs() < screen_y_bounds
-}
-
-// Next ////////////////
-
-// Create Player //////////////////
-const PLAYER_LIFE: i32 = 10;
-const PLAYER_WIDTH: f32 = 8.0;
-const PLAYER_HEIGHT: f32 = 8.0;
 
 pub fn create_player() -> Actor {
+    const PLAYER_LIFE: i32 = 10;
+    const PLAYER_WIDTH: f32 = 8.0;
+    const PLAYER_HEIGHT: f32 = 8.0;
     Actor::new(
         ActorType::Player,
         Vector2(0.0, -300.0),
@@ -187,9 +233,8 @@ pub fn create_player() -> Actor {
     )
 }
 
-const MAX_BULLET_VEL: f32 = 50.0;
-
 pub fn create_rand_bullets(rng: &mut Rand32, x_y: Vector2, num: i32) -> Vec<Actor> {
+    const MAX_BULLET_VEL: f32 = 50.0;
     let new_bullet = |_| {
         let r_angle = rng.rand_float() * 2.0 * std::f32::consts::PI;
         let r_distance = rng.rand_float();
@@ -240,14 +285,4 @@ pub fn create_bullet(x_y: Vector2, w_h: Vector2, facing: f32, vel: Vector2, ang_
         BULLET_LIFE,
         f32::MAX,
     )
-}
-
-pub fn handle_actor_collision(actor: &mut Actor, bullet: Actor) {
-    let player_size = actor.w_h.norm() / 2.0;
-    let pdistance = (bullet.x_y - actor.x_y).norm();
-    let bullet_size = bullet.w_h.norm();
-    if pdistance < player_size + bullet_size && actor.get_collision_timeout() < 0.0 {
-        actor.set_collision_timeout(actor.max_collision_timeout);
-        actor.dec_life(1);
-    }
 }
