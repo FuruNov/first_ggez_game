@@ -1,4 +1,4 @@
-# my_first_ggez
+# first_ggez_game
 
 ## 概要
 
